@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gameathon Nexus | Portal</title>
+    <style>
+        :root {
+            --bg: #090e17; --surface: rgba(30, 41, 59, 0.7); --text: #e2e8f0;
+            --accent: #00f2fe; --accent-glow: rgba(0, 242, 254, 0.3);
+            --admin-accent: #ff007f; --warning: #fbbf24;
+        }
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: linear-gradient(135deg, var(--bg), #111827);
+            color: var(--text); margin: 0; min-height: 100vh;
+            display: flex; align-items: center; justify-content: center; flex-direction: column;
+        }
+        .screen { display: none; flex-direction: column; gap: 2rem; width: 100%; max-width: 1000px; padding: 2rem; box-sizing: border-box; }
+        .screen.active { display: flex; animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .panel {
+            background: var(--surface); backdrop-filter: blur(10px); padding: 1.5rem;
+            border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        h2 { margin-top: 0; color: var(--accent); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
+        .admin-text { color: var(--admin-accent); }
+        
+        input, select {
+            width: 100%; padding: 10px; margin-bottom: 10px;
+            background: rgba(0,0,0,0.4); border: 1px solid #334155;
+            color: white; border-radius: 6px; box-sizing: border-box;
+        }
+        input:focus, select:focus { outline: none; border-color: var(--accent); }
+        
+        button {
+            width: 100%; padding: 12px; background: var(--accent); color: #000;
+            border: none; border-radius: 6px; font-weight: bold; cursor: pointer; text-transform: uppercase;
+        }
+        button:hover { filter: brightness(1.2); }
+        button.admin-btn { background: var(--admin-accent); color: white; }
+        button.danger-btn { background: #ef4444; color: white; }
+        
+        .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+        .col { flex: 1; min-width: 280px; }
+        
+        .player-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 15px;}
+        .player-card { background: rgba(0,0,0,0.3); padding: 10px; border-radius: 6px; font-size: 0.85rem;}
+        .player-card span { display: block; color: #94a3b8; margin-bottom: 4px; }
+        .leader-badge { color: var(--warning); font-weight: bold; font-size: 0.75rem; text-transform: uppercase;}
+        
+        .match-item { background: rgba(0,0,0,0.4); padding: 10px; border-left: 4px solid var(--warning); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;}
+    </style>
+</head>
+<body>
+
+    <div id="loginScreen" class="screen active">
+        <div class="panel" style="max-width: 400px; margin: 0 auto; text-align: center;">
+            <h2 style="color: white; justify-content: center; border: none;">System Access</h2>
+            <input type="text" id="loginId" placeholder="Team ID (or 'admin')">
+            <input type="password" id="loginPass" placeholder="Password">
+            <button onclick="handleLogin()">Authenticate</button>
+            <p id="loginError" style="color: #ff4757; display: none;"></p>
+        </div>
+    </div>
+
+    <div id="playerScreen" class="screen">
+        <div class="panel">
+            <h2 style="display: flex; justify-content: space-between;">
+                <span>Team: <span id="teamDisplay" style="color: white;"></span></span>
+                <span>Total Score: <span id="myScore" style="color: white;"></span></span>
+            </h2>
+            <p><strong>Team Internal Rankings (Private)</strong></p>
+            <div id="rosterList" class="player-grid"></div>
+            <button onclick="refreshPlayerData()" style="margin-top: 10px; background: transparent; border: 1px solid var(--accent); color: var(--accent);">Refresh My Data</button>
+        </div>
+        <div class="panel">
+            <h2>Global Leaderboard</h2>
+            <div id="playerLeaderboard"></div>
+        </div>
+        <button style="background: transparent; color: gray;" onclick="logout()">Disconnect</button>
+    </div>
+
+    <div id="adminScreen" class="screen">
+        <h1 class="admin-text" style="text-align: center; margin: 0;">Admin Command Center</h1>
+        
+        <div class="row">
+            <div class="col panel" style="border-color: var(--warning);">
+                <h2 style="color: var(--warning);">Live Match Arena</h2>
+                <select id="gameSelect">
+                    <option value="FC Mobile">FC Mobile</option>
+                    <option value="Valorant">Valorant</option>
+                    <option value="BGMI">BGMI</option>
+                    <option value="Chess">Chess</option>
+                </select>
+                <div class="row">
+                    <select id="playerASelect" class="col"><option>Loading...</option></select>
+                    <span style="color: white; padding-top: 10px;">VS</span>
+                    <select id="playerBSelect" class="col"><option>Loading...</option></select>
+                </div>
+                <button class="admin-btn" style="background: var(--warning); color: black; margin-top: 10px;" onclick="startMatch()">Start Match</button>
+                
+                <h3 style="color: white; margin-top: 20px;">Matches in Progress</h3>
+                <div id="activeMatchesList"></div>
+            </div>
+
+            <div class="col panel" style="border-color: var(--admin-accent);">
+                <h2 class="admin-text">Award Points</h2>
+                <select id="scoreTeamSelect" onchange="loadPlayersForScoring()"><option>Select Team First...</option></select>
+                <select id="scorePlayerSelect"><option>Waiting for team...</option></select>
+                <input type="number" id="pointsToAdd" placeholder="Points to Award">
+                <button class="admin-btn" onclick="awardPoints()">Commit Points</button>
+                
+                <h2 class="admin-text" style="margin-top: 20px;">Live Rankings</h2>
+                <div id="adminLeaderboardList"></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2 class="admin-text">Register New Team</h2>
+            <div class="row" style="margin-bottom: 15px;">
+                <input type="text" id="regId" placeholder="Team ID" class="col">
+                <input type="password" id="regPass" placeholder="Set Password" class="col">
+            </div>
+            <div class="player-grid">
+                <div class="player-card">
+                    <strong class="leader-badge">Captain (Player 1)</strong>
+                    <input type="text" id="p1Name" placeholder="Name">
+                    <input type="email" id="p1Email" placeholder="Email">
+                    <input type="text" id="p1Phone" placeholder="Phone">
+                </div>
+                <div class="player-card">
+                    <strong style="color: white; font-size: 0.75rem;">Player 2</strong>
+                    <input type="text" id="p2Name" placeholder="Name">
+                    <input type="email" id="p2Email" placeholder="Email">
+                    <input type="text" id="p2Phone" placeholder="Phone">
+                </div>
+                <div class="player-card">
+                    <strong style="color: white; font-size: 0.75rem;">Player 3</strong>
+                    <input type="text" id="p3Name" placeholder="Name">
+                    <input type="email" id="p3Email" placeholder="Email">
+                    <input type="text" id="p3Phone" placeholder="Phone">
+                </div>
+            </div>
+            <button class="admin-btn" onclick="registerTeam()">Register Team & Players</button>
+        </div>
+
+        <button style="background: transparent; color: gray;" onclick="logout()">Close Admin Session</button>
+    </div>
+
+    <script>
+        let currentTeamId = ''; 
+        let currentPassword = '';
+        let allTeamsData = []; 
+
+        function switchScreen(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+
+        async function handleLogin() {
+            currentTeamId = document.getElementById('loginId').value;
+            currentPassword = document.getElementById('loginPass').value;
+            
+            try {
+                const res = await fetch('/login', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ teamId: currentTeamId, password: currentPassword })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    document.getElementById('loginError').style.display = 'none';
+                    if (data.role === 'admin') {
+                        switchScreen('adminScreen');
+                        refreshAdminData();
+                    } else {
+                        renderPlayerDashboard(data.teamData);
+                        loadLeaderboard('playerLeaderboard');
+                        switchScreen('playerScreen');
+                    }
+                } else {
+                    document.getElementById('loginError').innerText = data.error;
+                    document.getElementById('loginError').style.display = 'block';
+                }
+            } catch (err) {
+                document.getElementById('loginError').innerText = "Server not responding.";
+                document.getElementById('loginError').style.display = 'block';
+            }
+        }
+
+        function logout() {
+            currentTeamId = ''; currentPassword = '';
+            document.getElementById('loginId').value = ''; document.getElementById('loginPass').value = '';
+            switchScreen('loginScreen');
+        }
+
+        async function refreshPlayerData() { handleLogin(); } 
+
+        function renderPlayerDashboard(teamData) {
+            document.getElementById('teamDisplay').innerText = teamData.teamId;
+            document.getElementById('myScore').innerText = teamData.score;
+            
+            const roster = document.getElementById('rosterList');
+            roster.innerHTML = '';
+            
+            // Sort players by points (highest first) to create an internal leaderboard
+            const sortedPlayers = [...teamData.players].sort((a, b) => b.points - a.points);
+            
+            sortedPlayers.forEach(p => {
+                roster.innerHTML += `
+                    <div class="player-card">
+                        ${p.role === 'Leader' ? '<div class="leader-badge">Team Leader</div>' : ''}
+                        <strong style="color: white; font-size: 1.1rem;">${p.name}</strong>
+                        <span>📧 ${p.email || 'N/A'}</span>
+                        <span>📱 ${p.phone || 'N/A'}</span>
+                        <div style="margin-top: 10px; color: var(--accent);">Personal Points: <strong>${p.points}</strong></div>
+                    </div>
+                `;
+            });
+        }
+
+        async function loadLeaderboard(elementId) {
+            const res = await fetch('/teams');
+            const teams = await res.json();
+            const list = document.getElementById(elementId);
+            if(!list) return;
+            list.innerHTML = '';
+            teams.forEach((t, i) => {
+                const playerNames = t.players.map(p => p.name).join(', ');
+                list.innerHTML += `<div class="match-item" style="border-left-color: var(--accent);">
+                    <div><strong>#${i + 1} ${t.teamId}</strong> <br><small style="color: gray;">${playerNames}</small></div>
+                    <strong style="color: var(--accent); font-size: 1.2rem;">${t.score} pts</strong>
+                </div>`;
+            });
+        }
+
+        async function refreshAdminData() {
+            const res = await fetch('/teams');
+            allTeamsData = await res.json();
+            
+            // Build the individual player dropdowns for the Match Arena
+            let allPlayersOptions = '<option value="">-- Select Player --</option>';
+            allTeamsData.forEach(team => {
+                team.players.forEach((player, index) => {
+                    const comboValue = `${team.teamId}|${index}|${player.name}`;
+                    allPlayersOptions += `<option value="${comboValue}">${player.name} (${team.teamId})</option>`;
+                });
+            });
+
+            document.getElementById('playerASelect').innerHTML = allPlayersOptions;
+            document.getElementById('playerBSelect').innerHTML = allPlayersOptions;
+            
+            // Build the team dropdown for the Scoring Terminal
+            const teamOptions = allTeamsData.map(t => `<option value="${t.teamId}">${t.teamId}</option>`).join('');
+            document.getElementById('scoreTeamSelect').innerHTML = `<option value="">-- Select Team --</option>` + teamOptions;
+            
+            fetchActiveMatches();
+            loadLeaderboard('adminLeaderboardList');
+        }
+
+        async function registerTeam() {
+            const data = {
+                teamId: document.getElementById('regId').value,
+                password: document.getElementById('regPass').value,
+                p1: { name: document.getElementById('p1Name').value, email: document.getElementById('p1Email').value, phone: document.getElementById('p1Phone').value },
+                p2: { name: document.getElementById('p2Name').value, email: document.getElementById('p2Email').value, phone: document.getElementById('p2Phone').value },
+                p3: { name: document.getElementById('p3Name').value, email: document.getElementById('p3Email').value, phone: document.getElementById('p3Phone').value }
+            };
+            const res = await fetch('/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+            alert((await res.json()).message || "Error");
+            
+            // Clear inputs after successful registration
+            document.getElementById('regId').value = '';
+            document.getElementById('regPass').value = '';
+            document.getElementById('p1Name').value = ''; document.getElementById('p1Email').value = ''; document.getElementById('p1Phone').value = '';
+            document.getElementById('p2Name').value = ''; document.getElementById('p2Email').value = ''; document.getElementById('p2Phone').value = '';
+            document.getElementById('p3Name').value = ''; document.getElementById('p3Email').value = ''; document.getElementById('p3Phone').value = '';
+            
+            refreshAdminData(); 
+        }
+
+        async function startMatch() {
+            const playerAData = document.getElementById('playerASelect').value;
+            const playerBData = document.getElementById('playerBSelect').value;
+            const gameName = document.getElementById('gameSelect').value;
+
+            if (!playerAData || !playerBData) return alert("Please select two players.");
+            if (playerAData === playerBData) return alert("A player cannot play against themselves!");
+
+            const [teamAId, pAIndex, pAName] = playerAData.split('|');
+            const [teamBId, pBIndex, pBName] = playerBData.split('|');
+
+            const data = {
+                gameName: gameName,
+                teamA: `${pAName} (${teamAId})`,
+                teamB: `${pBName} (${teamBId})`
+            };
+            
+            await fetch('/start-match', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+            
+            document.getElementById('playerASelect').value = "";
+            document.getElementById('playerBSelect').value = "";
+            
+            fetchActiveMatches();
+        }
+
+        async function fetchActiveMatches() {
+            const res = await fetch('/active-matches');
+            const matches = await res.json();
+            const list = document.getElementById('activeMatchesList');
+            list.innerHTML = matches.length === 0 ? '<p style="color: gray;">No active matches.</p>' : '';
+            
+            matches.forEach(m => {
+                list.innerHTML += `
+                    <div class="match-item">
+                        <div>
+                            <strong style="color: var(--warning)">[${m.gameName}]</strong><br>
+                            ${m.teamA} vs ${m.teamB}
+                        </div>
+                        <button class="danger-btn" style="width: auto; padding: 5px 10px; font-size: 0.8rem;" onclick="endMatch('${m._id}')">End Match</button>
+                    </div>
+                `;
+            });
+        }
+
+        function loadPlayersForScoring() {
+            const selectedTeamId = document.getElementById('scoreTeamSelect').value;
+            const team = allTeamsData.find(t => t.teamId === selectedTeamId);
+            const playerDropdown = document.getElementById('scorePlayerSelect');
+            
+            if (!team) { playerDropdown.innerHTML = '<option>Waiting for team...</option>'; return; }
+            
+            playerDropdown.innerHTML = team.players.map((p, index) => 
+                `<option value="${index}">${p.name} (${p.role})</option>`
+            ).join('');
+        }
+
+        async function awardPoints() {
+            const teamId = document.getElementById('scoreTeamSelect').value;
+            const playerIndex = document.getElementById('scorePlayerSelect').value;
+            const scoreToAdd = parseInt(document.getElementById('pointsToAdd').value);
+
+            if(!teamId || !scoreToAdd) return alert("Please fill out all scoring fields.");
+
+            const res = await fetch('/update-score', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ teamId, playerIndex, scoreToAdd })
+            });
+            
+            alert((await res.json()).message);
+            document.getElementById('pointsToAdd').value = ''; // clear input
+            refreshAdminData(); 
+        }
+    </script>
+</body>
+</html>
