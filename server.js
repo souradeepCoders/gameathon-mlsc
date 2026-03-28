@@ -2,68 +2,81 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
-const path = require('path'); // <-- NEW: This forces Vercel to find your folders
 
 const app = express();
 app.use(express.json());
-
-// --- NEW: Bulletproof Static File Serving for Vercel ---
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Explicitly send the index.html file when someone opens the site
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+app.use(express.static('public')); // Back to normal static serving
 
 // Connect to MongoDB Atlas
 mongoose.connect(process.env.MONGO_URI);
 
-// --- SCHEMAS ---
+// --- NEW SCHEMAS (Individual Logins) ---
 const playerSchema = new mongoose.Schema({
+    playerId: { type: String, required: true }, 
+    password: { type: String, required: true }, 
     name: String, email: String, phone: String, role: String, points: { type: Number, default: 0 }
 });
 
 const teamSchema = new mongoose.Schema({
     teamId: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
     players: [playerSchema],
     score: { type: Number, default: 0 } 
 });
 
-const matchSchema = new mongoose.Schema({
-    gameName: String, teamA: String, teamB: String
-});
+const matchSchema = new mongoose.Schema({ gameName: String, teamA: String, teamB: String });
 
 const Team = mongoose.model('Team', teamSchema);
 const Match = mongoose.model('Match', matchSchema);
 
+// Auto-Generators
+const generatePassword = () => Math.random().toString(36).slice(-6).toUpperCase();
+const generatePlayerId = (teamId, playerNum) => `${teamId}-P${playerNum}`;
+
 // --- ROUTES ---
 app.post('/login', async (req, res) => {
     try {
-        const { teamId, password } = req.body;
-        if (teamId === 'admin' && password === process.env.ADMIN_PASSWORD) {
+        const { loginId, password } = req.body;
+        
+        if (loginId === 'admin' && password === process.env.ADMIN_PASSWORD) {
             return res.json({ success: true, role: 'admin' });
         }
-        const team = await Team.findOne({ teamId });
-        if (!team || !(await bcrypt.compare(password, team.password))) {
+        
+        const team = await Team.findOne({ "players.playerId": loginId });
+        if (!team) return res.status(401).json({ error: "Invalid ID or Password." });
+        
+        const player = team.players.find(p => p.playerId === loginId);
+        if (!player || !(await bcrypt.compare(password, player.password))) {
             return res.status(401).json({ error: "Invalid ID or Password." });
         }
-        res.json({ success: true, role: 'player', teamData: team });
+        
+        res.json({ success: true, role: 'player', teamData: team, currentPlayer: player });
     } catch (error) { res.status(500).json({ error: "Internal Server Error." }); }
 });
 
 app.post('/register', async (req, res) => {
     try {
-        const { teamId, password, p1, p2, p3 } = req.body;
-        const hashedPassword = await bcrypt.hash(password, 10);
+        const { teamId, p1, p2, p3 } = req.body;
+        
+        const rawPass1 = generatePassword(); const rawPass2 = generatePassword(); const rawPass3 = generatePassword();
+        const id1 = generatePlayerId(teamId, 1); const id2 = generatePlayerId(teamId, 2); const id3 = generatePlayerId(teamId, 3);
+
         const playersData = [
-            { name: p1.name, email: p1.email, phone: p1.phone, role: 'Leader', points: 0 },
-            { name: p2.name, email: p2.email, phone: p2.phone, role: 'Member', points: 0 },
-            { name: p3.name, email: p3.email, phone: p3.phone, role: 'Member', points: 0 }
+            { playerId: id1, password: await bcrypt.hash(rawPass1, 10), name: p1.name, email: p1.email, phone: p1.phone, role: 'Leader', points: 0 },
+            { playerId: id2, password: await bcrypt.hash(rawPass2, 10), name: p2.name, email: p2.email, phone: p2.phone, role: 'Member', points: 0 },
+            { playerId: id3, password: await bcrypt.hash(rawPass3, 10), name: p3.name, email: p3.email, phone: p3.phone, role: 'Member', points: 0 }
         ];
-        const newTeam = new Team({ teamId, password: hashedPassword, players: playersData });
+
+        const newTeam = new Team({ teamId, players: playersData });
         await newTeam.save();
-        res.status(201).json({ message: "Team registered successfully!" });
+        
+        res.status(201).json({ 
+            message: "Team registered successfully!",
+            credentials: [
+                { name: p1.name, id: id1, pass: rawPass1 },
+                { name: p2.name, id: id2, pass: rawPass2 },
+                { name: p3.name, id: id3, pass: rawPass3 }
+            ]
+        });
     } catch (error) { res.status(400).json({ error: "Registration failed. Team ID might already exist." }); }
 });
 
@@ -108,11 +121,6 @@ app.post('/end-match', async (req, res) => {
     } catch (error) { res.status(500).json({ error: "Failed to end match." }); }
 });
 
-// --- VERCEL EXPORT ---
-module.exports = app;
-
-// Keep local hosting working for your laptop testing
-if (require.main === module) {
-    const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-}
+// Standard Server Boot
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
