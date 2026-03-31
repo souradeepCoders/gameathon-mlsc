@@ -123,4 +123,5 @@ app.post('/end-match', async (req, res) => {
 
 // Standard Server Boot
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// Add '0.0.0.0' so Replit allows mobile phones to connect
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
